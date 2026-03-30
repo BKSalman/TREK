@@ -923,6 +923,13 @@ const it: Record<string, string | { name: string; category: string }[]> = {
   'budget.settlement': 'Regolamento',
   'budget.settlementInfo': 'Clicca sull\'avatar di un membro su una voce di budget per contrassegnarlo in verde — significa che ha pagato. Il regolamento mostra poi chi deve quanto a chi.',
   'budget.netBalances': 'Saldi netti',
+  'budget.itemCurrency': "Valuta dell'articolo",
+  'budget.convertedAmount': 'Importo convertito',
+  'budget.baseCurrency': 'Valuta base',
+  'budget.refreshRates': 'Aggiorna tassi di cambio',
+  'budget.ratesUpdated': 'Tassi aggiornati',
+  'budget.ratesFailed': 'Impossibile ottenere i tassi di cambio',
+  'budget.approximateConversion': '≈ convertito da {currency}',
 
   // Files
   'files.title': 'File',

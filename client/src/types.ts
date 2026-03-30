@@ -102,9 +102,15 @@ export interface BudgetItem {
   name: string
   amount: number
   currency: string
+  total_price: number
+  item_currency: string
+  converted_price: number | null
   category: string | null
   paid_by: number | null
   persons: number
+  days: number | null
+  note: string | null
+  sort_order: number
   members: BudgetMember[]
 }
 

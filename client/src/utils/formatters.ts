@@ -37,3 +37,17 @@ export function dayTotalCost(dayId: number, assignments: AssignmentsMap, currenc
   const total = da.reduce((s, a) => s + (parseFloat(a.place?.price || '') || 0), 0)
   return total > 0 ? `${total.toFixed(0)} ${currency}` : null
 }
+
+/**
+ * Format a converted amount with the approximate symbol prefix.
+ * e.g., "≈ 92.50 €"
+ */
+export function formatConvertedAmount(
+  amount: number | null | undefined,
+  locale: string,
+  currency: string
+): string | null {
+  if (amount == null || isNaN(amount)) return null
+  const d = currencyDecimals(currency)
+  return '≈ ' + Number(amount).toLocaleString(locale, { minimumFractionDigits: d, maximumFractionDigits: d }) + ' ' + currency
+}

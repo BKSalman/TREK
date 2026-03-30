@@ -14,6 +14,7 @@ export interface BudgetSlice {
   deleteBudgetItem: (tripId: number | string, id: number) => Promise<void>
   setBudgetItemMembers: (tripId: number | string, itemId: number, userIds: number[]) => Promise<{ members: BudgetMember[]; item: BudgetItem }>
   toggleBudgetMemberPaid: (tripId: number | string, itemId: number, userId: number, paid: boolean) => Promise<void>
+  refreshBudgetRates: (tripId: number | string) => Promise<void>
 }
 
 export const createBudgetSlice = (set: SetState, get: GetState): BudgetSlice => ({
@@ -78,5 +79,16 @@ export const createBudgetSlice = (set: SetState, get: GetState): BudgetSlice => 
           : item
       )
     }));
+  },
+
+  refreshBudgetRates: async (tripId) => {
+    try {
+      const data = await budgetApi.refreshRates(tripId)
+      if (data.items) {
+        set({ budgetItems: data.items })
+      }
+    } catch (err: unknown) {
+      console.error('Failed to refresh budget rates:', err)
+    }
   },
 })

@@ -201,6 +201,10 @@ export function handleRemoteEvent(set: SetState, event: WebSocketEvent): void {
               : i
           ),
         }
+      case 'budget:rates-updated':
+        // Trigger a full reload of budget items via custom event
+        window.dispatchEvent(new CustomEvent('budget:rates-updated', { detail: payload }))
+        return {}
 
       // Reservations
       case 'reservation:created':
