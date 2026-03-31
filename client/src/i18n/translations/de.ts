@@ -924,6 +924,13 @@ const de: Record<string, string | { name: string; category: string }[]> = {
   'budget.settlement': 'Ausgleich',
   'budget.settlementInfo': 'Klicke auf ein Mitglied-Bild bei einem Eintrag, um es grün zu markieren — das bedeutet, diese Person hat bezahlt. Der Ausgleich zeigt dann, wer wem wie viel schuldet.',
   'budget.netBalances': 'Netto-Salden',
+  'budget.itemCurrency': 'Artikelwährung',
+  'budget.convertedAmount': 'Umgerechneter Betrag',
+  'budget.baseCurrency': 'Basiswährung',
+  'budget.refreshRates': 'Wechselkurse aktualisieren',
+  'budget.ratesUpdated': 'Kurse aktualisiert',
+  'budget.ratesFailed': 'Wechselkurse konnten nicht abgerufen werden',
+  'budget.approximateConversion': '≈ umgerechnet von {currency}',
 
   // Files
   'files.title': 'Dateien',

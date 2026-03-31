@@ -2,7 +2,8 @@ import express, { Request, Response } from 'express';
 import { db, canAccessTrip } from '../db/database';
 import { authenticate } from '../middleware/auth';
 import { broadcast } from '../websocket';
-import { AuthRequest, BudgetItem, BudgetItemMember } from '../types';
+import { AuthRequest, BudgetItem, BudgetItemMember, Trip } from '../types';
+import { convertAmount, recalculateTrip, getRatesFetchedAt } from '../services/exchangeRates';
 
 const router = express.Router({ mergeParams: true });
 
@@ -62,8 +63,8 @@ router.get('/summary/per-person', authenticate, (req: Request, res: Response) =>
 
   const summary = db.prepare(`
     SELECT bm.user_id, u.username, u.avatar,
-      SUM(bi.total_price * 1.0 / (SELECT COUNT(*) FROM budget_item_members WHERE budget_item_id = bi.id)) as total_assigned,
-      SUM(CASE WHEN bm.paid = 1 THEN bi.total_price * 1.0 / (SELECT COUNT(*) FROM budget_item_members WHERE budget_item_id = bi.id) ELSE 0 END) as total_paid,
+      SUM(COALESCE(bi.converted_price, bi.total_price) * 1.0 / (SELECT COUNT(*) FROM budget_item_members WHERE budget_item_id = bi.id)) as total_assigned,
+      SUM(CASE WHEN bm.paid = 1 THEN COALESCE(bi.converted_price, bi.total_price) * 1.0 / (SELECT COUNT(*) FROM budget_item_members WHERE budget_item_id = bi.id) ELSE 0 END) as total_paid,
       COUNT(bi.id) as items_count
     FROM budget_item_members bm
     JOIN budget_items bi ON bm.budget_item_id = bi.id
@@ -75,26 +76,43 @@ router.get('/summary/per-person', authenticate, (req: Request, res: Response) =>
   res.json({ summary: summary.map(s => ({ ...s, avatar_url: avatarUrl(s) })) });
 });
 
-router.post('/', authenticate, (req: Request, res: Response) => {
+router.post('/', authenticate, async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const { tripId } = req.params;
-  const { category, name, total_price, persons, days, note } = req.body;
+  const { category, name, total_price, persons, days, note, item_currency } = req.body;
 
   const trip = verifyTripOwnership(tripId, authReq.user.id);
   if (!trip) return res.status(404).json({ error: 'Trip not found' });
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
+  const tripData = db.prepare('SELECT currency FROM trips WHERE id = ?').get(tripId) as Trip | undefined;
+  const baseCurrency = tripData?.currency || 'EUR';
+  const itemCur = item_currency || baseCurrency;
+  const price = total_price || 0;
+
+  // Compute converted_price
+  let convertedPrice: number | null = price;
+  if (itemCur.toUpperCase() !== baseCurrency.toUpperCase()) {
+    try {
+      convertedPrice = await convertAmount(price, itemCur, baseCurrency);
+    } catch {
+      convertedPrice = null;
+    }
+  }
+
   const maxOrder = db.prepare('SELECT MAX(sort_order) as max FROM budget_items WHERE trip_id = ?').get(tripId) as { max: number | null };
   const sortOrder = (maxOrder.max !== null ? maxOrder.max : -1) + 1;
 
   const result = db.prepare(
-    'INSERT INTO budget_items (trip_id, category, name, total_price, persons, days, note, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO budget_items (trip_id, category, name, total_price, item_currency, converted_price, persons, days, note, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     tripId,
     category || 'Other',
     name,
-    total_price || 0,
+    price,
+    itemCur,
+    convertedPrice,
     persons != null ? persons : null,
     days !== undefined && days !== null ? days : null,
     note || null,
@@ -107,22 +125,23 @@ router.post('/', authenticate, (req: Request, res: Response) => {
   broadcast(tripId, 'budget:created', { item }, req.headers['x-socket-id'] as string);
 });
 
-router.put('/:id', authenticate, (req: Request, res: Response) => {
+router.put('/:id', authenticate, async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const { tripId, id } = req.params;
-  const { category, name, total_price, persons, days, note, sort_order } = req.body;
+  const { category, name, total_price, persons, days, note, sort_order, item_currency } = req.body;
 
   const trip = verifyTripOwnership(tripId, authReq.user.id);
   if (!trip) return res.status(404).json({ error: 'Trip not found' });
 
-  const item = db.prepare('SELECT * FROM budget_items WHERE id = ? AND trip_id = ?').get(id, tripId);
-  if (!item) return res.status(404).json({ error: 'Budget item not found' });
+  const existing = db.prepare('SELECT * FROM budget_items WHERE id = ? AND trip_id = ?').get(id, tripId) as BudgetItem | undefined;
+  if (!existing) return res.status(404).json({ error: 'Budget item not found' });
 
   db.prepare(`
     UPDATE budget_items SET
       category = COALESCE(?, category),
       name = COALESCE(?, name),
       total_price = CASE WHEN ? IS NOT NULL THEN ? ELSE total_price END,
+      item_currency = CASE WHEN ? IS NOT NULL THEN ? ELSE item_currency END,
       persons = CASE WHEN ? IS NOT NULL THEN ? ELSE persons END,
       days = CASE WHEN ? THEN ? ELSE days END,
       note = CASE WHEN ? THEN ? ELSE note END,
@@ -132,12 +151,31 @@ router.put('/:id', authenticate, (req: Request, res: Response) => {
     category || null,
     name || null,
     total_price !== undefined ? 1 : null, total_price !== undefined ? total_price : 0,
+    item_currency !== undefined ? 1 : null, item_currency !== undefined ? item_currency : null,
     persons !== undefined ? 1 : null, persons !== undefined ? persons : null,
     days !== undefined ? 1 : 0, days !== undefined ? days : null,
     note !== undefined ? 1 : 0, note !== undefined ? note : null,
     sort_order !== undefined ? 1 : null, sort_order !== undefined ? sort_order : 0,
     id
   );
+
+  // Recalculate converted_price if total_price or item_currency changed
+  if (total_price !== undefined || item_currency !== undefined) {
+    const after = db.prepare('SELECT total_price, item_currency FROM budget_items WHERE id = ?').get(id) as { total_price: number; item_currency: string | null };
+    const tripData = db.prepare('SELECT currency FROM trips WHERE id = ?').get(tripId) as Trip | undefined;
+    const baseCurrency = tripData?.currency || 'EUR';
+    const itemCur = (after.item_currency || baseCurrency).toUpperCase();
+
+    let convertedPrice: number | null = after.total_price;
+    if (itemCur !== baseCurrency.toUpperCase()) {
+      try {
+        convertedPrice = await convertAmount(after.total_price, itemCur, baseCurrency);
+      } catch {
+        convertedPrice = null;
+      }
+    }
+    db.prepare('UPDATE budget_items SET converted_price = ? WHERE id = ?').run(convertedPrice, id);
+  }
 
   const updated = db.prepare('SELECT * FROM budget_items WHERE id = ?').get(id) as BudgetItem & { members?: BudgetItemMember[] };
   updated.members = loadItemMembers(id);
@@ -219,8 +257,9 @@ router.get('/settlement', authenticate, (req: Request, res: Response) => {
     const payers = members.filter(m => m.paid);
     if (payers.length === 0) continue; // no one marked as paid
 
-    const sharePerMember = item.total_price / members.length;
-    const paidPerPayer = item.total_price / payers.length;
+    const effectivePrice = item.converted_price ?? item.total_price;
+    const sharePerMember = effectivePrice / members.length;
+    const paidPerPayer = effectivePrice / payers.length;
 
     for (const m of members) {
       if (!balances[m.user_id]) {
@@ -264,6 +303,32 @@ router.get('/settlement', authenticate, (req: Request, res: Response) => {
     balances: Object.values(balances).map(b => ({ ...b, balance: Math.round(b.balance * 100) / 100 })),
     flows,
   });
+});
+
+// Refresh exchange rates for all items in this trip
+router.post('/refresh-rates', authenticate, async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+  const { tripId } = req.params;
+  if (!canAccessTrip(Number(tripId), authReq.user.id)) return res.status(404).json({ error: 'Trip not found' });
+
+  try {
+    await recalculateTrip(tripId);
+
+    const tripData = db.prepare('SELECT currency FROM trips WHERE id = ?').get(tripId) as Trip | undefined;
+    const baseCurrency = tripData?.currency || 'EUR';
+    const lastFetched = getRatesFetchedAt(baseCurrency);
+
+    // Reload all items to send fresh data
+    const items = db.prepare(
+      'SELECT * FROM budget_items WHERE trip_id = ? ORDER BY category ASC, created_at ASC'
+    ).all(tripId) as BudgetItem[];
+
+    res.json({ success: true, items, rates_fetched_at: lastFetched });
+    broadcast(Number(tripId), 'budget:rates-updated', { tripId: Number(tripId) }, req.headers['x-socket-id'] as string);
+  } catch (err) {
+    console.error('[Budget] refresh-rates error:', err);
+    res.status(500).json({ error: 'Failed to refresh exchange rates' });
+  }
 });
 
 router.delete('/:id', authenticate, (req: Request, res: Response) => {

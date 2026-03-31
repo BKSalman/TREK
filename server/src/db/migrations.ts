@@ -427,6 +427,36 @@ function runMigrations(db: Database.Database): void {
         db.prepare("UPDATE addons SET type = 'integration' WHERE id = 'mcp'").run();
       } catch {}
     },
+    () => {
+      // Per-item currency support: add item_currency and converted_price to budget_items
+      try { db.exec('ALTER TABLE budget_items ADD COLUMN item_currency TEXT DEFAULT NULL'); } catch {}
+      try { db.exec('ALTER TABLE budget_items ADD COLUMN converted_price REAL DEFAULT NULL'); } catch {}
+
+      // Exchange rate cache table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS exchange_rates (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          base_currency TEXT NOT NULL,
+          target_currency TEXT NOT NULL,
+          rate REAL NOT NULL,
+          fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(base_currency, target_currency)
+        );
+        CREATE INDEX IF NOT EXISTS idx_exchange_rates_base ON exchange_rates(base_currency);
+      `);
+
+      // Backfill existing items: set item_currency from their trip's currency, converted_price = total_price
+      try {
+        db.exec(`
+          UPDATE budget_items
+          SET item_currency = (SELECT currency FROM trips WHERE trips.id = budget_items.trip_id),
+              converted_price = total_price
+          WHERE item_currency IS NULL
+        `);
+      } catch (e: unknown) {
+        console.error('[DB] Migration backfill error:', e instanceof Error ? e.message : e);
+      }
+    },
   ];
 
   if (currentVersion < migrations.length) {

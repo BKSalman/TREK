@@ -928,6 +928,13 @@ const cs: Record<string, string | { name: string; category: string }[]> = {
   'budget.settlement': 'Vyúčtování',
   'budget.settlementInfo': 'Klikněte na avatar člena u rozpočtové položky pro zelené označení – to znamená, že zaplatil. Vyúčtování pak ukazuje, kdo komu a kolik dluží.',
   'budget.netBalances': 'Čisté zůstatky',
+  'budget.itemCurrency': 'Měna položky',
+  'budget.convertedAmount': 'Převedená částka',
+  'budget.baseCurrency': 'Základní měna',
+  'budget.refreshRates': 'Obnovit směnné kurzy',
+  'budget.ratesUpdated': 'Kurzy aktualizovány',
+  'budget.ratesFailed': 'Nepodařilo se získat směnné kurzy',
+  'budget.approximateConversion': '≈ převedeno z {currency}',
 
   // Soubory (Files)
   'files.title': 'Soubory',

@@ -7,6 +7,7 @@ import { db, canAccessTrip, isOwner } from '../db/database';
 import { authenticate, demoUploadBlock } from '../middleware/auth';
 import { broadcast } from '../websocket';
 import { AuthRequest, Trip, User } from '../types';
+import { recalculateTrip } from '../services/exchangeRates';
 
 const router = express.Router();
 
@@ -163,7 +164,7 @@ router.get('/:id', authenticate, (req: Request, res: Response) => {
   res.json({ trip });
 });
 
-router.put('/:id', authenticate, (req: Request, res: Response) => {
+router.put('/:id', authenticate, async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const access = canAccessTrip(req.params.id, authReq.user.id);
   if (!access) return res.status(404).json({ error: 'Trip not found' });
@@ -187,6 +188,8 @@ router.put('/:id', authenticate, (req: Request, res: Response) => {
   const newArchived = is_archived !== undefined ? (is_archived ? 1 : 0) : trip.is_archived;
   const newCover = cover_image !== undefined ? cover_image : trip.cover_image;
 
+  const currencyChanged = newCurrency !== trip.currency;
+
   db.prepare(`
     UPDATE trips SET title=?, description=?, start_date=?, end_date=?,
       currency=?, is_archived=?, cover_image=?, updated_at=CURRENT_TIMESTAMP
@@ -195,6 +198,16 @@ router.put('/:id', authenticate, (req: Request, res: Response) => {
 
   if (newStart !== trip.start_date || newEnd !== trip.end_date)
     generateDays(req.params.id, newStart, newEnd);
+
+  // If base currency changed, recalculate all budget converted_price values
+  if (currencyChanged) {
+    try {
+      await recalculateTrip(req.params.id);
+      broadcast(Number(req.params.id), 'budget:rates-updated', { tripId: Number(req.params.id) }, req.headers['x-socket-id'] as string);
+    } catch (err) {
+      console.error('[Trips] Failed to recalculate budget after currency change:', err);
+    }
+  }
 
   const updatedTrip = db.prepare(`${TRIP_SELECT} WHERE t.id = :tripId`).get({ userId: authReq.user.id, tripId: req.params.id });
   res.json({ trip: updatedTrip });

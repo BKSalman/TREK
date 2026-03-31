@@ -111,8 +111,13 @@ export default function DayDetailPanel({ day, days, places, categories = [], tri
         check_out: hotelForm.check_out || null,
         confirmation: hotelForm.confirmation || null,
       })
-      setAccommodation(data.accommodation)
-      setAccommodations(prev => [...prev, data.accommodation])
+      const newAcc = data.accommodation
+      const updated = [...accommodations, newAcc]
+      setAccommodations(updated)
+      setAccommodation(newAcc)
+      setDayAccommodations(updated.filter(a =>
+        days.some(d => d.id >= a.start_day_id && d.id <= a.end_day_id && d.id === day?.id)
+      ))
       setShowHotelPicker(false)
       setHotelForm({ check_in: '', check_out: '', confirmation: '', place_id: null })
       onAccommodationChange?.()
@@ -132,7 +137,11 @@ export default function DayDetailPanel({ day, days, places, categories = [], tri
     if (!accommodation) return
     try {
       await accommodationsApi.delete(tripId, accommodation.id)
-      setAccommodations(prev => prev.filter(a => a.id !== accommodation.id))
+      const updated = accommodations.filter(a => a.id !== accommodation.id)
+      setAccommodations(updated)
+      setDayAccommodations(updated.filter(a =>
+        days.some(d => d.id >= a.start_day_id && d.id <= a.end_day_id && d.id === day?.id)
+      ))
       setAccommodation(null)
       onAccommodationChange?.()
     } catch {}
@@ -549,8 +558,12 @@ export default function DayDetailPanel({ day, days, places, categories = [], tri
                       setHotelForm({ check_in: '', check_out: '', confirmation: '', place_id: null })
                       // Reload
                       accommodationsApi.list(tripId).then(d => {
-                        setAccommodations(d.accommodations || [])
-                        const acc = (d.accommodations || []).find(a => days.some(dd => dd.id >= a.start_day_id && dd.id <= a.end_day_id && dd.id === day?.id))
+                        const all = d.accommodations || []
+                        setAccommodations(all)
+                        setDayAccommodations(all.filter(a =>
+                          days.some(dd => dd.id >= a.start_day_id && dd.id <= a.end_day_id && dd.id === day?.id)
+                        ))
+                        const acc = all.find(a => days.some(dd => dd.id >= a.start_day_id && dd.id <= a.end_day_id && dd.id === day?.id))
                         setAccommodation(acc || null)
                       })
                       onAccommodationChange?.()

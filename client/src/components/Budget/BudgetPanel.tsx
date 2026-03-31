@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import DOM from 'react-dom'
 import { useTripStore } from '../../store/tripStore'
 import { useTranslation } from '../../i18n'
-import { Plus, Trash2, Calculator, Wallet, Pencil, Users, Check, Info, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, Calculator, Wallet, Pencil, Users, Check, Info, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import CustomSelect from '../shared/CustomSelect'
 import { budgetApi } from '../../api/client'
 import type { BudgetItem, BudgetMember } from '../../types'
@@ -99,21 +99,26 @@ function InlineEditCell({ value, onSave, type = 'text', style = {}, placeholder 
 
 // ── Add Item Row ─────────────────────────────────────────────────────────────
 interface AddItemRowProps {
-  onAdd: (data: { name: string; total_price: number; persons: number | null; days: number | null; note: string | null }) => void
+  onAdd: (data: { name: string; total_price: number; item_currency: string; persons: number | null; days: number | null; note: string | null }) => void
   t: (key: string) => string
+  baseCurrency: string
 }
 
-function AddItemRow({ onAdd, t }: AddItemRowProps) {
+function AddItemRow({ onAdd, t, baseCurrency }: AddItemRowProps) {
   const [name, setName] = useState('')
   const [price, setPrice] = useState('')
+  const [itemCur, setItemCur] = useState(baseCurrency)
   const [persons, setPersons] = useState('')
   const [days, setDays] = useState('')
   const [note, setNote] = useState('')
   const nameRef = useRef(null)
 
+  // Keep the default currency in sync with the trip's base currency
+  useEffect(() => { setItemCur(baseCurrency) }, [baseCurrency])
+
   const handleAdd = () => {
     if (!name.trim()) return
-    onAdd({ name: name.trim(), total_price: parseFloat(String(price).replace(',', '.')) || 0, persons: parseInt(persons) || null, days: parseInt(days) || null, note: note.trim() || null })
+    onAdd({ name: name.trim(), total_price: parseFloat(String(price).replace(',', '.')) || 0, item_currency: itemCur, persons: parseInt(persons) || null, days: parseInt(days) || null, note: note.trim() || null })
     setName(''); setPrice(''); setPersons(''); setDays(''); setNote('')
     setTimeout(() => nameRef.current?.focus(), 50)
   }
@@ -127,8 +132,20 @@ function AddItemRow({ onAdd, t }: AddItemRowProps) {
           placeholder={t('budget.newEntry')} style={inp} />
       </td>
       <td style={{ padding: '4px 6px' }}>
-        <input value={price} onChange={e => setPrice(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()}
-          placeholder="0,00" inputMode="decimal" style={{ ...inp, textAlign: 'center' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <input value={price} onChange={e => setPrice(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            placeholder="0,00" inputMode="decimal" style={{ ...inp, textAlign: 'center', flex: 1, minWidth: 50 }} />
+          <div style={{ flexShrink: 0, width: 76 }}>
+            <CustomSelect
+              value={itemCur}
+              onChange={setItemCur}
+              options={CURRENCIES.map(c => ({ value: c, label: c }))}
+              searchable
+              size="sm"
+              style={{ fontSize: 11 }}
+            />
+          </div>
+        </div>
       </td>
       <td className="hidden sm:table-cell" style={{ padding: '4px 6px', textAlign: 'center' }}>
         <input value={persons} onChange={e => setPersons(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()}
@@ -411,12 +428,13 @@ interface BudgetPanelProps {
 }
 
 export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelProps) {
-  const { trip, budgetItems, addBudgetItem, updateBudgetItem, deleteBudgetItem, loadBudgetItems, updateTrip, setBudgetItemMembers, toggleBudgetMemberPaid } = useTripStore()
+  const { trip, budgetItems, addBudgetItem, updateBudgetItem, deleteBudgetItem, loadBudgetItems, updateTrip, setBudgetItemMembers, toggleBudgetMemberPaid, refreshBudgetRates } = useTripStore()
   const { t, locale } = useTranslation()
   const [newCategoryName, setNewCategoryName] = useState('')
   const [editingCat, setEditingCat] = useState(null) // { name, value }
   const [settlement, setSettlement] = useState<{ balances: any[]; flows: any[] } | null>(null)
   const [settlementOpen, setSettlementOpen] = useState(false)
+  const [refreshingRates, setRefreshingRates] = useState(false)
   const currency = trip?.currency || 'EUR'
 
   const fmt = (v, cur) => fmtNum(v, locale, cur)
@@ -428,11 +446,30 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
     budgetApi.settlement(tripId).then(setSettlement).catch(() => {})
   }, [tripId, budgetItems, hasMultipleMembers])
 
-  const setCurrency = (cur) => {
-    if (tripId) updateTrip(tripId, { currency: cur })
+  const setCurrency = async (cur) => {
+    if (!tripId) return
+    setRefreshingRates(true)
+    try {
+      await updateTrip(tripId, { currency: cur })
+      await refreshBudgetRates(tripId)
+    } finally {
+      setRefreshingRates(false)
+    }
+  }
+
+  const handleRefreshRates = async () => {
+    setRefreshingRates(true)
+    try { await refreshBudgetRates(tripId) } finally { setRefreshingRates(false) }
   }
 
   useEffect(() => { if (tripId) loadBudgetItems(tripId) }, [tripId])
+
+  // Listen for remote rate updates
+  useEffect(() => {
+    const handler = () => { loadBudgetItems(tripId) }
+    window.addEventListener('budget:rates-updated', handler)
+    return () => window.removeEventListener('budget:rates-updated', handler)
+  }, [tripId, loadBudgetItems])
 
   const grouped = useMemo(() => (budgetItems || []).reduce((acc, item) => {
     const cat = item.category || 'Other'
@@ -442,17 +479,19 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
   }, {}), [budgetItems])
 
   const categoryNames = Object.keys(grouped)
-  const grandTotal = (budgetItems || []).reduce((s, i) => s + (i.total_price || 0), 0)
+  const grandTotal = (budgetItems || []).reduce((s, i) => s + (i.converted_price ?? i.total_price ?? 0), 0)
+  // Check if any item uses a different currency than the trip base
+  const hasMultipleCurrencies = (budgetItems || []).some(i => i.item_currency && i.item_currency.toUpperCase() !== currency.toUpperCase())
 
   const pieSegments = useMemo(() =>
     categoryNames.map((cat, i) => ({
       name: cat,
-      value: grouped[cat].reduce((s, x) => s + (x.total_price || 0), 0),
+      value: grouped[cat].reduce((s, x) => s + (x.converted_price ?? x.total_price ?? 0), 0),
       color: PIE_COLORS[i % PIE_COLORS.length],
     })).filter(s => s.value > 0)
   , [grouped, categoryNames])
 
-  const handleAddItem = async (category, data) => { try { await addBudgetItem(tripId, { ...data, category }) } catch {} }
+  const handleAddItem = async (category, data) => { try { await addBudgetItem(tripId, { ...data, category }); } catch {} }
   const handleUpdateField = async (id, field, value) => { try { await updateBudgetItem(tripId, id, { [field]: value }) } catch {} }
   const handleDeleteItem = async (id) => { try { await deleteBudgetItem(tripId, id) } catch {} }
   const handleDeleteCategory = async (cat) => {
@@ -510,7 +549,7 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
         <div style={{ flex: 1, minWidth: 0 }}>
           {categoryNames.map((cat, ci) => {
             const items = grouped[cat]
-            const subtotal = items.reduce((s, x) => s + (x.total_price || 0), 0)
+            const subtotal = items.reduce((s, x) => s + (x.converted_price ?? x.total_price ?? 0), 0)
             const color = PIE_COLORS[ci % PIE_COLORS.length]
 
             return (
@@ -565,9 +604,10 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
                     </thead>
                     <tbody>
                       {items.map(item => {
-                        const pp = calcPP(item.total_price, item.persons)
-                        const pd = calcPD(item.total_price, item.days)
-                        const ppd = calcPPD(item.total_price, item.persons, item.days)
+                        const effectivePrice = item.converted_price ?? item.total_price ?? 0
+                        const pp = calcPP(effectivePrice, item.persons)
+                        const pd = calcPD(effectivePrice, item.days)
+                        const ppd = calcPPD(effectivePrice, item.persons, item.days)
                         const hasMembers = item.members?.length > 0
                         return (
                           <tr key={item.id} style={{ transition: 'background 0.1s' }}
@@ -589,7 +629,26 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
                               )}
                             </td>
                             <td style={{ ...td, textAlign: 'center' }}>
-                              <InlineEditCell value={item.total_price} type="number" decimals={currencyDecimals(currency)} onSave={v => handleUpdateField(item.id, 'total_price', v)} style={{ textAlign: 'center' }} placeholder={currencyDecimals(currency) === 0 ? '0' : '0,00'} locale={locale} editTooltip={t('budget.editTooltip')} />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <InlineEditCell value={item.total_price} type="number" decimals={currencyDecimals(item.item_currency || currency)} onSave={v => handleUpdateField(item.id, 'total_price', v)} style={{ textAlign: 'center' }} placeholder={currencyDecimals(item.item_currency || currency) === 0 ? '0' : '0,00'} locale={locale} editTooltip={t('budget.editTooltip')} />
+                                  {item.item_currency && item.item_currency.toUpperCase() !== currency.toUpperCase() && item.converted_price != null && (
+                                    <div style={{ fontSize: 10, color: 'var(--text-faint)', textAlign: 'center', lineHeight: 1.2, marginTop: -2 }}>
+                                      {'≈ ' + fmtNum(item.converted_price, locale, currency)}
+                                    </div>
+                                  )}
+                                </div>
+                                <div style={{ flexShrink: 0, width: 76 }}>
+                                  <CustomSelect
+                                    value={item.item_currency || currency}
+                                    onChange={v => handleUpdateField(item.id, 'item_currency', v)}
+                                    options={CURRENCIES.map(c => ({ value: c, label: c }))}
+                                    searchable
+                                    size="sm"
+                                    style={{ fontSize: 10 }}
+                                  />
+                                </div>
+                              </div>
                             </td>
                             <td className="hidden sm:table-cell" style={{ ...td, textAlign: 'center', position: 'relative' }}>
                               {hasMultipleMembers ? (
@@ -620,7 +679,7 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
                           </tr>
                         )
                       })}
-                      <AddItemRow onAdd={data => handleAddItem(cat, data)} t={t} />
+                      <AddItemRow onAdd={data => handleAddItem(cat, data)} t={t} baseCurrency={currency} />
                     </tbody>
                   </table>
                 </div>
@@ -638,6 +697,23 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
               searchable
             />
           </div>
+
+          {hasMultipleCurrencies && (
+            <button onClick={handleRefreshRates} disabled={refreshingRates}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, width: '100%', justifyContent: 'center',
+                padding: '7px 12px', marginBottom: 12, borderRadius: 10, fontSize: 11, fontWeight: 500,
+                fontFamily: 'inherit', cursor: refreshingRates ? 'wait' : 'pointer',
+                border: '1px solid var(--border-primary)', background: 'var(--bg-secondary)',
+                color: 'var(--text-muted)', transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => { if (!refreshingRates) e.currentTarget.style.background = 'var(--bg-hover)' }}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+            >
+              <RefreshCw size={12} style={refreshingRates ? { animation: 'spin 1s linear infinite' } : {}} />
+              {t('budget.refreshRates')}
+            </button>
+          )}
 
           <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
             <input
