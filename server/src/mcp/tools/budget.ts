@@ -5,7 +5,7 @@ import { isDemoUser } from '../../services/authService';
 import {
   createBudgetItem, updateBudgetItem, deleteBudgetItem,
   updateMembers as updateBudgetMembers,
-  toggleMemberPaid,
+  setMemberPaymentStatus,
 } from '../../services/budgetService';
 import {
   safeBroadcast, TOOL_ANNOTATIONS_WRITE, TOOL_ANNOTATIONS_DELETE,
@@ -15,6 +15,7 @@ import {
 import { canWrite } from '../scopes';
 import { isAddonEnabled } from '../../services/adminService';
 import { ADDON_IDS } from '../../addons';
+import { PaymentStatus } from '../../types.ts';
 
 export function registerBudgetTools(server: McpServer, userId: number, scopes: string[] | null): void {
   const W = canWrite(scopes, 'budget');
@@ -150,22 +151,24 @@ export function registerBudgetTools(server: McpServer, userId: number, scopes: s
     }
   );
 
+  const paymentStatusSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+
   if (W) server.registerTool(
     'toggle_budget_member_paid',
     {
-      description: 'Mark or unmark a member as having paid their share of a budget item.',
+      description: 'Set a member\'s payment status, whether they paid for the item, or paid their share, or not.',
       inputSchema: {
         tripId: z.number().int().positive(),
         itemId: z.number().int().positive(),
         memberId: z.number().int().positive().describe('User ID of the member'),
-        paid: z.boolean(),
+        paymentStatus: paymentStatusSchema.describe('Payment status: 0 = NotPaid, 1 = Paid, 2 = Settled'),
       },
       annotations: TOOL_ANNOTATIONS_WRITE,
     },
-    async ({ tripId, itemId, memberId, paid }) => {
+    async ({ tripId, itemId, memberId, paymentStatus }) => {
       if (isDemoUser(userId)) return demoDenied();
       if (!canAccessTrip(tripId, userId)) return noAccess();
-      const member = toggleMemberPaid(itemId, memberId, paid);
+      const member = setMemberPaymentStatus(itemId, memberId, paymentStatus);
       safeBroadcast(tripId, 'budget:member-paid-updated', { itemId, member });
       return ok({ member });
     }

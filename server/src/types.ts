@@ -132,7 +132,7 @@ export interface BudgetItem {
 
 export interface BudgetItemMember {
   user_id: number;
-  paid: number;
+  payment_status: number;
   username: string;
   avatar_url?: string | null;
   avatar?: string | null;
@@ -419,3 +419,11 @@ export interface JourneyContributor {
   role: 'owner' | 'editor' | 'viewer';
   added_at: number;
 }
+
+const PaymentStatus = {
+  NotPaid: 0,
+  Paid: 1,
+  Settled: 2,
+} as const;
+
+export type PaymentStatus = typeof PaymentStatus[keyof typeof PaymentStatus];

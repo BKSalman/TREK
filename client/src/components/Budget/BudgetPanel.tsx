@@ -5,6 +5,7 @@ import { useTripStore } from '../../store/tripStore'
 import { useCanDo } from '../../store/permissionsStore'
 import { useTranslation } from '../../i18n'
 import { Plus, Trash2, Calculator, Wallet, Pencil, Users, Check, Info, ChevronDown, ChevronRight, Download, GripVertical, TrendingUp, TrendingDown, PieChart as PieChartIcon } from 'lucide-react'
+import { PaymentStatus } from "../../types"
 
 function useIsDark(): boolean {
   const [dark, setDark] = useState<boolean>(() => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'))
@@ -251,11 +252,11 @@ interface ChipWithTooltipProps {
   label: string
   avatarUrl: string | null
   size?: number
-  paid?: boolean
+  paymentStatus?: PaymentStatus
   onClick?: () => void
 }
 
-function ChipWithTooltip({ label, avatarUrl, size = 20, paid, onClick }: ChipWithTooltipProps) {
+function ChipWithTooltip({ label, avatarUrl, size = 20, paymentStatus = 0, onClick }: ChipWithTooltipProps) {
   const [hover, setHover] = useState(false)
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const ref = useRef(null)
@@ -268,8 +269,11 @@ function ChipWithTooltip({ label, avatarUrl, size = 20, paid, onClick }: ChipWit
     setHover(true)
   }
 
-  const borderColor = paid ? '#22c55e' : 'var(--border-primary)'
-  const bg = paid ? 'rgba(34,197,94,0.15)' : 'var(--bg-tertiary)'
+  const isPaid = paymentStatus === 1
+  const isSettled = paymentStatus === 2
+  const borderColor = isSettled ? '#3b82f6' : isPaid ? '#22c55e' : 'var(--border-primary)'
+  const bg = isSettled ? 'rgba(59,130,246,0.15)' : isPaid ? 'rgba(34,197,94,0.15)' : 'var(--bg-tertiary)'
+  const textColor = isSettled ? '#2563eb' : isPaid ? '#16a34a' : 'var(--text-muted)'
 
   return (
     <>
@@ -278,7 +282,7 @@ function ChipWithTooltip({ label, avatarUrl, size = 20, paid, onClick }: ChipWit
         style={{
           width: size, height: size, borderRadius: '50%', border: `2px solid ${borderColor}`,
           background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: size * 0.4, fontWeight: 700, color: paid ? '#16a34a' : 'var(--text-muted)',
+          fontSize: size * 0.4, fontWeight: 700, color: textColor,
           overflow: 'hidden', flexShrink: 0, cursor: onClick ? 'pointer' : 'default',
           transition: 'border-color 0.15s, background 0.15s',
         }}>
@@ -297,12 +301,19 @@ function ChipWithTooltip({ label, avatarUrl, size = 20, paid, onClick }: ChipWit
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)', border: '1px solid var(--border-faint, #e5e7eb)',
         }}>
           {label}
-          {paid && (
+          {isPaid && (
             <span style={{
               fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
               background: 'rgba(34,197,94,0.15)', color: '#16a34a',
               textTransform: 'uppercase', letterSpacing: '0.03em',
             }}>Paid</span>
+          )}
+          {isSettled && (
+            <span style={{
+              fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+              background: 'rgba(59,130,246,0.15)', color: '#2563eb',
+              textTransform: 'uppercase', letterSpacing: '0.03em',
+            }}>Settled</span>
           )}
         </div>,
         document.body
@@ -316,12 +327,12 @@ interface BudgetMemberChipsProps {
   members?: BudgetMember[]
   tripMembers?: TripMember[]
   onSetMembers: (memberIds: number[]) => void
-  onTogglePaid?: (userId: number, paid: boolean) => void
+  onChangePaymentStatus?: (userId: number, paymentStatus: PaymentStatus) => void
   compact?: boolean
   readOnly?: boolean
 }
 
-function BudgetMemberChips({ members = [], tripMembers = [], onSetMembers, onTogglePaid, compact = true, readOnly = false }: BudgetMemberChipsProps) {
+function BudgetMemberChips({ members = [], tripMembers = [], onSetMembers, onChangePaymentStatus, compact = true, readOnly = false }: BudgetMemberChipsProps) {
   const chipSize = compact ? 20 : 30
   const btnSize = compact ? 18 : 28
   const iconSize = compact ? (members.length > 0 ? 8 : 9) : (members.length > 0 ? 12 : 14)
@@ -362,8 +373,8 @@ function BudgetMemberChips({ members = [], tripMembers = [], onSetMembers, onTog
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
       {members.map(m => (
         <ChipWithTooltip key={m.user_id} label={m.username} avatarUrl={m.avatar_url} size={chipSize}
-          paid={!!m.paid}
-          onClick={!readOnly && onTogglePaid ? () => onTogglePaid(m.user_id, !m.paid) : undefined}
+          paymentStatus={m.payment_status}
+          onClick={!readOnly && onChangePaymentStatus ? () => onChangePaymentStatus(m.user_id, ((Number(m.payment_status) + 1) % 3) as PaymentStatus) : undefined}
         />
       ))}
       {!readOnly && (
@@ -559,7 +570,7 @@ interface BudgetPanelProps {
 }
 
 export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelProps) {
-  const { trip, budgetItems, addBudgetItem, updateBudgetItem, deleteBudgetItem, loadBudgetItems, updateTrip, setBudgetItemMembers, toggleBudgetMemberPaid, reorderBudgetItems, reorderBudgetCategories } = useTripStore()
+  const { trip, budgetItems, addBudgetItem, updateBudgetItem, deleteBudgetItem, loadBudgetItems, updateTrip, setBudgetItemMembers, toggleBudgetMemberPaymentStatus, reorderBudgetItems, reorderBudgetCategories } = useTripStore()
   const can = useCanDo()
   const { t, locale } = useTranslation()
   const isDark = useIsDark()
@@ -917,7 +928,7 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
                                         members={item.members || []}
                                         tripMembers={tripMembers}
                                         onSetMembers={(userIds) => setBudgetItemMembers(tripId, item.id, userIds)}
-                                        onTogglePaid={(userId, paid) => toggleBudgetMemberPaid(tripId, item.id, userId, paid)}
+                                        onChangePaymentStatus={(userId, paymentStatus) => toggleBudgetMemberPaymentStatus(tripId, item.id, userId, paymentStatus)}
                                         compact={false}
                                         readOnly={!canEdit}
                                       />
@@ -935,7 +946,7 @@ export default function BudgetPanel({ tripId, tripMembers = [] }: BudgetPanelPro
                                   members={item.members || []}
                                   tripMembers={tripMembers}
                                   onSetMembers={(userIds) => setBudgetItemMembers(tripId, item.id, userIds)}
-                                  onTogglePaid={(userId, paid) => toggleBudgetMemberPaid(tripId, item.id, userId, paid)}
+                                  onChangePaymentStatus={(userId, paymentStatus) => toggleBudgetMemberPaymentStatus(tripId, item.id, userId, paymentStatus)}
                                   readOnly={!canEdit}
                                 />
                               ) : (

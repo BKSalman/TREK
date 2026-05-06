@@ -1,5 +1,5 @@
 import { db, canAccessTrip } from '../db/database';
-import { BudgetItem, BudgetItemMember } from '../types';
+import { BudgetItem, BudgetItemMember, PaymentStatus } from '../types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,7 +15,7 @@ export function verifyTripAccess(tripId: string | number, userId: number) {
 
 function loadItemMembers(itemId: number | string) {
   const rows = db.prepare(`
-    SELECT bm.user_id, bm.paid, u.username, u.avatar
+    SELECT bm.user_id, bm.paid AS payment_status, u.username, u.avatar
     FROM budget_item_members bm
     JOIN users u ON bm.user_id = u.id
     WHERE bm.budget_item_id = ?
@@ -40,7 +40,7 @@ export function listBudgetItems(tripId: string | number) {
 
   if (itemIds.length > 0) {
     const allMembers = db.prepare(`
-      SELECT bm.budget_item_id, bm.user_id, bm.paid, u.username, u.avatar
+      SELECT bm.budget_item_id, bm.user_id, bm.paid AS payment_status, u.username, u.avatar
       FROM budget_item_members bm
       JOIN users u ON bm.user_id = u.id
       WHERE bm.budget_item_id IN (${itemIds.map(() => '?').join(',')})
@@ -49,7 +49,7 @@ export function listBudgetItems(tripId: string | number) {
     for (const m of allMembers) {
       if (!membersByItem[m.budget_item_id]) membersByItem[m.budget_item_id] = [];
       membersByItem[m.budget_item_id].push({
-        user_id: m.user_id, paid: m.paid, username: m.username, avatar_url: avatarUrl(m),
+        user_id: m.user_id, payment_status: m.payment_status, username: m.username, avatar_url: avatarUrl(m),
       });
     }
   }
@@ -176,12 +176,12 @@ export function updateMembers(id: string | number, tripId: string | number, user
   return { members, item: updated };
 }
 
-export function toggleMemberPaid(id: string | number, userId: string | number, paid: boolean) {
+export function setMemberPaymentStatus(id: string | number, userId: string | number, paymentStatus: PaymentStatus) {
   db.prepare('UPDATE budget_item_members SET paid = ? WHERE budget_item_id = ? AND user_id = ?')
-    .run(paid ? 1 : 0, id, userId);
+    .run(Number(paymentStatus), id, userId);
 
   const member = db.prepare(`
-    SELECT bm.user_id, bm.paid, u.username, u.avatar
+    SELECT bm.user_id, bm.paid AS payment_status, u.username, u.avatar
     FROM budget_item_members bm JOIN users u ON bm.user_id = u.id
     WHERE bm.budget_item_id = ? AND bm.user_id = ?
   `).get(id, userId) as BudgetItemMember | undefined;
@@ -216,7 +216,7 @@ export function getPerPersonSummary(tripId: string | number) {
 export function calculateSettlement(tripId: string | number) {
   const items = db.prepare('SELECT * FROM budget_items WHERE trip_id = ?').all(tripId) as BudgetItem[];
   const allMembers = db.prepare(`
-    SELECT bm.budget_item_id, bm.user_id, bm.paid, u.username, u.avatar
+    SELECT bm.budget_item_id, bm.user_id, bm.paid AS payment_status, u.username, u.avatar
     FROM budget_item_members bm
     JOIN users u ON bm.user_id = u.id
     WHERE bm.budget_item_id IN (SELECT id FROM budget_items WHERE trip_id = ?)
@@ -229,20 +229,23 @@ export function calculateSettlement(tripId: string | number) {
     const members = allMembers.filter(m => m.budget_item_id === item.id);
     if (members.length === 0) continue;
 
-    const payers = members.filter(m => m.paid);
+    const payers = members.filter(m => m.payment_status === 1);
     if (payers.length === 0) continue; // no one marked as paid
 
     const sharePerMember = item.total_price / members.length;
     const paidPerPayer = item.total_price / payers.length;
 
     for (const m of members) {
+      // Settled members already resolved their debt — skip them
+      if (m.payment_status === 2) continue;
+
       if (!balances[m.user_id]) {
         balances[m.user_id] = { user_id: m.user_id, username: m.username, avatar_url: avatarUrl(m), balance: 0 };
       }
       // Everyone owes their share
       balances[m.user_id].balance -= sharePerMember;
       // Payers get credited what they paid
-      if (m.paid) balances[m.user_id].balance += paidPerPayer;
+      if (m.payment_status === 1) balances[m.user_id].balance += paidPerPayer;
     }
   }
 

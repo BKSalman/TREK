@@ -3,7 +3,7 @@ import { budgetRepo } from '../../repo/budgetRepo'
 import type { StoreApi } from 'zustand'
 import type { TripStoreState } from '../tripStore'
 import type { BudgetItem, BudgetMember } from '../../types'
-import { getApiErrorMessage } from '../../types'
+import { getApiErrorMessage, PaymentStatus } from '../../types'
 
 type SetState = StoreApi<TripStoreState>['setState']
 type GetState = StoreApi<TripStoreState>['getState']
@@ -14,7 +14,7 @@ export interface BudgetSlice {
   updateBudgetItem: (tripId: number | string, id: number, data: Partial<BudgetItem>) => Promise<BudgetItem>
   deleteBudgetItem: (tripId: number | string, id: number) => Promise<void>
   setBudgetItemMembers: (tripId: number | string, itemId: number, userIds: number[]) => Promise<{ members: BudgetMember[]; item: BudgetItem }>
-  toggleBudgetMemberPaid: (tripId: number | string, itemId: number, userId: number, paid: boolean) => Promise<void>
+  toggleBudgetMemberPaymentStatus: (tripId: number | string, itemId: number, userId: number, paymentStatus: PaymentStatus) => Promise<void>
   reorderBudgetItems: (tripId: number | string, orderedIds: number[]) => Promise<void>
   reorderBudgetCategories: (tripId: number | string, orderedCategories: string[]) => Promise<void>
 }
@@ -75,12 +75,12 @@ export const createBudgetSlice = (set: SetState, get: GetState): BudgetSlice => 
     return result;
   },
 
-  toggleBudgetMemberPaid: async (tripId, itemId, userId, paid) => {
-    await budgetApi.togglePaid(tripId, itemId, userId, paid);
+  toggleBudgetMemberPaymentStatus: async (tripId, itemId, userId, paymentStatus) => {
+    await budgetApi.setPaymentStatus(tripId, itemId, userId, paymentStatus);
     set(state => ({
       budgetItems: state.budgetItems.map(item =>
         item.id === itemId
-          ? { ...item, members: (item.members || []).map(m => m.user_id === userId ? { ...m, paid } : m) }
+          ? { ...item, members: (item.members || []).map(m => m.user_id === userId ? { ...m, payment_status: paymentStatus } : m) }
           : item
       )
     }));
