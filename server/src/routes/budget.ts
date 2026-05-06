@@ -11,12 +11,13 @@ import {
   updateBudgetItem,
   deleteBudgetItem,
   updateMembers,
-  toggleMemberPaid,
+  setMemberPaymentStatus,
   getPerPersonSummary,
   calculateSettlement,
   reorderBudgetItems,
   reorderBudgetCategories,
 } from '../services/budgetService';
+import { PaymentStatus } from '../types.ts';
 
 const router = express.Router({ mergeParams: true });
 
@@ -153,10 +154,10 @@ router.put('/:id/members/:userId/paid', authenticate, (req: Request, res: Respon
   if (!checkPermission('budget_edit', authReq.user.role, access.user_id, authReq.user.id, access.user_id !== authReq.user.id))
     return res.status(403).json({ error: 'No permission' });
 
-  const { paid } = req.body;
-  const member = toggleMemberPaid(id, userId, paid);
+  const { paymentStatus }: { paymentStatus: PaymentStatus } = req.body;
+  const member = setMemberPaymentStatus(id, userId, paymentStatus);
   res.json({ member });
-  broadcast(Number(tripId), 'budget:member-paid-updated', { itemId: Number(id), userId: Number(userId), paid: paid ? 1 : 0 }, req.headers['x-socket-id'] as string);
+  broadcast(Number(tripId), 'budget:member-paid-updated', { itemId: Number(id), userId: Number(userId), paid: Number(paymentStatus) }, req.headers['x-socket-id'] as string);
 });
 
 router.get('/settlement', authenticate, (req: Request, res: Response) => {

@@ -9,8 +9,8 @@ beforeEach(() => {
 });
 
 describe('remoteEventHandler > budget', () => {
-  const member1: BudgetMember = { user_id: 5, paid: false };
-  const member2: BudgetMember = { user_id: 6, paid: true };
+  const member1: BudgetMember = { user_id: 5, payment_status: 0 };
+  const member2: BudgetMember = { user_id: 6, payment_status: 1 };
 
   const seedData = () => {
     useTripStore.setState({
@@ -58,7 +58,7 @@ describe('remoteEventHandler > budget', () => {
 
   it('FE-WSEVT-BUDGET-005: budget:members-updated replaces entire members array and persons count', () => {
     seedData();
-    const newMembers: BudgetMember[] = [{ user_id: 7, paid: true }, { user_id: 8, paid: false }];
+    const newMembers: BudgetMember[] = [{ user_id: 7, payment_status: 1 }, { user_id: 8, payment_status: 0 }];
     useTripStore.getState().handleRemoteEvent({
       type: 'budget:members-updated',
       itemId: 1,
@@ -85,9 +85,9 @@ describe('remoteEventHandler > budget', () => {
     const { budgetItems } = useTripStore.getState();
     const item = budgetItems.find(i => i.id === 1);
     const m = item?.members?.find(m => m.user_id === 5);
-    expect(m?.paid).toBe(true);
+    expect(m?.payment_status).toBe(1);
     // Other item members unchanged
     const item2 = budgetItems.find(i => i.id === 2);
-    expect(item2?.members?.[0].paid).toBe(true);
+    expect(item2?.members?.[0].payment_status).toBe(1);
   });
 });

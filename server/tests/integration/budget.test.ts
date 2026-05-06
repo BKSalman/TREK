@@ -263,22 +263,22 @@ describe('Budget item members', () => {
       .set('Cookie', authCookie(user.id))
       .send({ user_ids: [user.id] });
 
-    // Toggle to paid=true
+    // Set payment status to Paid (1)
     const res = await request(app)
       .put(`/api/trips/${trip.id}/budget/${item.id}/members/${user.id}/paid`)
       .set('Cookie', authCookie(user.id))
-      .send({ paid: true });
+      .send({ paymentStatus: 1 });
     expect(res.status).toBe(200);
     expect(res.body.member).toBeDefined();
-    expect(res.body.member.paid).toBe(1); // SQLite stores as integer
+    expect(res.body.member.payment_status).toBe(1);
 
-    // Toggle back to paid=false
+    // Set payment status back to NotPaid (0)
     const res2 = await request(app)
       .put(`/api/trips/${trip.id}/budget/${item.id}/members/${user.id}/paid`)
       .set('Cookie', authCookie(user.id))
-      .send({ paid: false });
+      .send({ paymentStatus: 0 });
     expect(res2.status).toBe(200);
-    expect(res2.body.member.paid).toBe(0);
+    expect(res2.body.member.payment_status).toBe(0);
   });
 });
 

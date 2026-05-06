@@ -160,17 +160,17 @@ describe('budgetSlice', () => {
     });
   });
 
-  describe('toggleBudgetMemberPaid', () => {
-    it('FE-BUDGET-008: toggleBudgetMemberPaid updates paid status after API success', async () => {
-      const member = { user_id: 5, paid: false };
+  describe('toggleBudgetMemberPaymentStatus', () => {
+    it('FE-BUDGET-008: toggleBudgetMemberPaymentStatus updates payment status after API success', async () => {
+      const member = { user_id: 5, payment_status: 0 };
       const item = buildBudgetItem({ id: 10, trip_id: 1, members: [member] });
       seedStore(useTripStore, { budgetItems: [item] });
 
-      await useTripStore.getState().toggleBudgetMemberPaid(1, 10, 5, true);
+      await useTripStore.getState().toggleBudgetMemberPaymentStatus(1, 10, 5, 1);
 
       const updatedItem = useTripStore.getState().budgetItems.find(i => i.id === 10);
       const updatedMember = updatedItem?.members.find(m => m.user_id === 5);
-      expect(updatedMember?.paid).toBe(true);
+      expect(updatedMember?.payment_status).toBe(1);
     });
   });
 });
