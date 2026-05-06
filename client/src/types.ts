@@ -134,7 +134,7 @@ export interface BudgetItem {
 
 export interface BudgetMember {
   user_id: number
-  paid: boolean
+  payment_status: PaymentStatus
 }
 
 export interface ReservationEndpoint {
@@ -435,3 +435,11 @@ export interface MergedItem {
   sortKey: number
   data: Assignment | DayNote | Reservation
 }
+
+export const PaymentStatus = {
+  NotPaid: 0,
+  Paid: 1,
+  Settled: 2,
+} as const;
+
+export type PaymentStatus = typeof PaymentStatus[keyof typeof PaymentStatus];

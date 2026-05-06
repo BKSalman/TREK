@@ -125,7 +125,7 @@ describe('budgetSlice', () => {
     const item = buildBudgetItem({
       id: 8,
       trip_id: 1,
-      members: [{ user_id: 3, paid: false }],
+      members: [{ user_id: 3, payment_status: 0 }],
     });
     seedStore(useTripStore, { budgetItems: [item] });
 
@@ -134,9 +134,9 @@ describe('budgetSlice', () => {
         HttpResponse.json({ success: true, paid: true })
       )
     );
-    await useTripStore.getState().toggleBudgetMemberPaid(1, 8, 3, true);
+    await useTripStore.getState().toggleBudgetMemberPaymentStatus(1, 8, 3, 1);
     const stored = useTripStore.getState().budgetItems.find(i => i.id === 8);
-    expect(stored?.members?.[0]?.paid).toBe(true);
+    expect(stored?.members?.[0]?.payment_status).toBe(1);
   });
 
   it('FE-STORE-BUDGET-010: reorderBudgetItems reorders optimistically and reloads on error', async () => {

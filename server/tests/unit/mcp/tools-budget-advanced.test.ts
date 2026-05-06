@@ -136,7 +136,7 @@ describe('Tool: set_budget_item_members', () => {
 // ---------------------------------------------------------------------------
 
 describe('Tool: toggle_budget_member_paid', () => {
-  it('flips paid flag and broadcasts', async () => {
+  it('sets payment status and broadcasts', async () => {
     const { user } = createUser(testDb);
     const trip = createTrip(testDb, user.id);
     const item = createBudgetItem(testDb, trip.id, { total_price: 200 });
@@ -145,7 +145,7 @@ describe('Tool: toggle_budget_member_paid', () => {
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'toggle_budget_member_paid',
-        arguments: { tripId: trip.id, itemId: item.id, memberId: user.id, paid: true },
+        arguments: { tripId: trip.id, itemId: item.id, memberId: user.id, paymentStatus: 1 },
       });
       const data = parseToolResult(result) as any;
       expect(data.member).toBeDefined();
@@ -161,7 +161,7 @@ describe('Tool: toggle_budget_member_paid', () => {
     await withHarness(user.id, async (h) => {
       const result = await h.client.callTool({
         name: 'toggle_budget_member_paid',
-        arguments: { tripId: trip.id, itemId: item.id, memberId: user.id, paid: true },
+        arguments: { tripId: trip.id, itemId: item.id, memberId: user.id, paymentStatus: 1 },
       });
       expect(result.isError).toBe(true);
     });

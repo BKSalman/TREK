@@ -14,6 +14,7 @@ import ru from '../i18n/translations/ru'
 import zh from '../i18n/translations/zh'
 import zhTw from '../i18n/translations/zhTw'
 import ar from '../i18n/translations/ar'
+import { PaymentStatus } from '../types.ts' 
 
 const rateLimitTranslations: Record<string, Record<string, string | unknown>> = {
   en, br, de, es, fr, it, nl, pl, cs, hu, ru, zh, 'zh-TW': zhTw, ar,
@@ -405,7 +406,7 @@ export const budgetApi = {
   update: (tripId: number | string, id: number, data: Record<string, unknown>) => apiClient.put(`/trips/${tripId}/budget/${id}`, data).then(r => r.data),
   delete: (tripId: number | string, id: number) => apiClient.delete(`/trips/${tripId}/budget/${id}`).then(r => r.data),
   setMembers: (tripId: number | string, id: number, userIds: number[]) => apiClient.put(`/trips/${tripId}/budget/${id}/members`, { user_ids: userIds }).then(r => r.data),
-  togglePaid: (tripId: number | string, id: number, userId: number, paid: boolean) => apiClient.put(`/trips/${tripId}/budget/${id}/members/${userId}/paid`, { paid }).then(r => r.data),
+  setPaymentStatus: (tripId: number | string, id: number, userId: number, paymentStatus: PaymentStatus ) => apiClient.put(`/trips/${tripId}/budget/${id}/members/${userId}/paid`, { paymentStatus }).then(r => r.data),
   perPersonSummary: (tripId: number | string) => apiClient.get(`/trips/${tripId}/budget/summary/per-person`).then(r => r.data),
   settlement: (tripId: number | string) => apiClient.get(`/trips/${tripId}/budget/settlement`).then(r => r.data),
   reorderItems: (tripId: number | string, orderedIds: number[]) => apiClient.put(`/trips/${tripId}/budget/reorder/items`, { orderedIds }).then(r => r.data),
